@@ -1,0 +1,376 @@
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'dart:async';
+
+import 'src/menu.dart';                               // ADD
+import 'src/navigation_controls.dart';
+import 'src/web_view_stack.dart';
+
+void main() {
+  runApp(
+    MaterialApp(
+      theme: ThemeData(useMaterial3: true),
+      home: WebViewApp(),
+    ),
+  );
+}
+
+class WebViewApp extends StatefulWidget {
+  const WebViewApp({super.key});
+
+  @override
+  State<WebViewApp> createState() => _WebViewAppState();
+}
+
+class _WebViewAppState extends State<WebViewApp> {
+  late final WebViewController controller;
+
+
+  String userAgent = "";
+
+  @override
+  void initState() {
+    super.initState();
+    controller = WebViewController()
+      ..loadRequest(
+        Uri.parse('http://localhost:7001/?ios=true'),
+        headers: <String, String>{
+          'X-From-WebView': 'true',
+          'userAgent': "Custom User Agent",
+        },
+      );
+
+    // _waitForPageToFinishLoading();
+  }
+
+
+  // Future<void> _waitForPageToFinishLoading() async {
+  //   while (true) {
+  //     await Future.delayed(Duration(milliseconds: 500));
+  //     final  pageLoaded =
+  //     await controller.runJavaScriptReturningResult('document.readyState == "complete"');
+  //     if (pageLoaded == 'true') {
+  //       userAgent = await getUserAgent();
+  //       print("User Agent: $userAgent");
+  //       // Use the user agent here as needed
+  //       break;
+  //     }
+  //   }
+  // }
+
+  // Future<String> getUserAgent() async {
+  //   final userAgent = await controller.runJavaScriptReturningResult('navigator.userAgent');
+  //   return userAgent != null ? userAgent.toString() : "not found";
+  // }
+
+
+  //
+  // Future<String> getUserAgent() async {
+  //   final completer = Completer<String>();
+  //   await controller.runJavaScriptReturningResult('navigator.userAgent')
+  //       .then((result) => completer.complete(result as FutureOr<String>?));
+  //   return completer.future;
+  // }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        // title: const Text('Flutter WebView'),
+        // actions: [
+        //   NavigationControls(controller: controller),
+        //   Menu(controller: controller),               // ADD
+        // ],
+      ),
+      body: WebViewStack(controller: controller),
+    );
+  }
+}
+
+
+
+
+//updated biz api method
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'dart:async';
+
+import 'src/menu.dart';                               // ADD
+import 'src/navigation_controls.dart';
+import 'src/web_view_stack.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+void main() async {
+  await dotenv.load(fileName: ".env");
+  runApp(
+    MaterialApp(
+      theme: ThemeData(useMaterial3: true),
+      home: WebViewApp(),
+    ),
+  );
+}
+
+class WebViewApp extends StatefulWidget {
+  const WebViewApp({super.key});
+
+  @override
+  State<WebViewApp> createState() => _WebViewAppState();
+}
+
+class _WebViewAppState extends State<WebViewApp> {
+  late final WebViewController controller;
+
+
+  @override
+  void initState() {
+    super.initState();
+    String baseUrl =  dotenv.env['BIZ_API_URL'] ?? ' ';
+    controller = WebViewController()
+    ..loadRequest(
+        Uri.parse('$baseUrl/business/account/signup'),
+        headers: <String, String>{
+          'X-From-WebView': 'true',
+        },
+      );
+    // _waitForPageToFinishLoading();
+    setCookie(controller);
+  }
+
+  Future<void> setCookie(WebViewController controller) async {
+    await controller.evaluateJavascript("""
+      document.cookie = 'X-From-Webview=true';
+    """);
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        // title: const Text('Flutter WebView'),
+        // actions: [
+        //   NavigationControls(controller: controller),
+        //   Menu(controller: controller),               // ADD
+        // ],
+      ),
+      body: WebViewStack(controller: controller),
+    );
+  }
+}
+
+
+
+//web_view_stack bizapi
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+class WebViewStack extends StatefulWidget {
+  const WebViewStack({required this.controller, super.key});
+
+  final WebViewController controller;
+
+  @override
+  State<WebViewStack> createState() => _WebViewStackState();
+}
+
+class _WebViewStackState extends State<WebViewStack> {
+  var loadingPercentage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (url) {
+            // print("Page started: $url");
+            setState(() {
+              loadingPercentage = 0;
+            });
+          },
+          onProgress: (progress) {
+            setState(() {
+              loadingPercentage = progress;
+            });
+          },
+          onPageFinished: (url) {
+            setState(() {
+              loadingPercentage = 100;
+            });
+          },
+          onNavigationRequest: (navigation) async {
+            // final host = Uri.parse(navigation.url).host;
+            // print("Navigation Request: $navigation.url");
+
+            final String url = navigation.url;
+            final Uri hosturi = Uri.parse(url);
+
+            // Now 'url' contains the full URL as a string, and 'uri' is a Uri object for further parsing if needed.
+            final String host = hosturi.host;
+
+            print("Navigation Request URL: $url");
+            // print("Navigation Request Host: $host");
+
+            if (host.contains('youtube.com')) {
+              print("it is from inside the youtube $url ");
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    'Blocking navigation to $host',
+                  ),
+                ),
+              );
+              return NavigationDecision.prevent;
+            }
+
+            final String signupUrl = dotenv.env['SIGNUP_URL'] ?? '';
+            print(signupUrl);
+
+            if (url == "$signupUrl/signup") {
+              print("Detected the URL $signupUrl/signup");
+              if (await canLaunch(url)) {
+                await launch(url);
+                return NavigationDecision.prevent; // Prevent the WebView from loading the URL
+              }
+
+              // Add your additional logic here if needed
+            }
+
+            if (url == "$signupUrl/test") {
+              print("Detected the URL $signupUrl/test");
+              if (await canLaunch(url)) {
+                await launch(url);
+                return NavigationDecision.prevent; // Prevent the WebView from loading the URL
+              }
+
+              // Add your additional logic here if needed
+            }
+
+            // if (url.contains("signup")) {
+            //   print("Signup detected in the URL in the WebView");
+            //   if (await canLaunchUrl(navigation.url as Uri)) {
+            // await launchUrl(navigation.url as Uri);
+            // return NavigationDecision.prevent;
+            // }
+          // }
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..addJavaScriptChannel(
+        'SnackBar',
+        onMessageReceived: (message) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(message.message)));
+        },
+      );
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        WebViewWidget(
+          controller: widget.controller,
+        ),
+        if (loadingPercentage < 100)
+          LinearProgressIndicator(
+            value: loadingPercentage / 100.0,
+          ),
+      ],
+    );
+  }
+}
+
+
+
+date:feb 15 3.22pm
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'dart:async';
+
+import 'src/menu.dart';                               // ADD
+import 'src/navigation_controls.dart';
+import 'src/web_view_stack.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:webview_cookie_manager/webview_cookie_manager.dart';
+
+void main() async {
+  await dotenv.load(fileName: ".env");
+  runApp(
+    MaterialApp(
+      theme: ThemeData(useMaterial3: true),
+      home: WebViewApp(),
+    ),
+  );
+}
+
+class WebViewApp extends StatefulWidget {
+  const WebViewApp({super.key});
+
+  @override
+  State<WebViewApp> createState() => _WebViewAppState();
+}
+
+class _WebViewAppState extends State<WebViewApp> {
+  late final WebViewController controller;
+
+
+  @override
+  void initState() {
+    super.initState();
+    String baseUrl =  dotenv.env['WEB_APP_URL'] ?? ' ';
+
+    // WebViewCookie cookie = WebViewCookie(
+    //   name: "X-From-WebView",
+    //   value: "true",
+    //   domain: baseUrl, // Set the domain appropriately
+    // );
+    //
+    // WebViewCookieManager().setCookie(cookie);
+
+    controller = WebViewController();
+    controller.currentUrl.listen((url) {
+      print("URL changed to: $url");
+      // You can also store the URL in a state variable here if needed
+    });
+
+      controller.loadRequest(
+        Uri.parse('$baseUrl')
+        // headers: <String, String>{
+        //   'X-From-WebView': 'true',
+        // },
+      );
+
+
+    // controller = WebViewController()
+    //   ..loadRequest(
+    //     Uri.parse('$baseUrl/business/account/signup'),
+    //     headers: <String, String>{
+    //       'X-From-WebView': 'true',
+    //     },
+    //   );
+    // _waitForPageToFinishLoading();
+  }
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        // title: const Text('Flutter WebView'),
+        // actions: [
+        //   NavigationControls(controller: controller),
+        //   Menu(controller: controller),               // ADD
+        // ],
+      ),
+      body: WebViewStack(controller: controller),
+    );
+  }
+}
